@@ -17,7 +17,6 @@ https://github.com/Coca1ne/xosVer
 import os,sys,socket,binascii,subprocess,re
 
 from optparse import OptionError
-from optparse import OptionGroup
 from optparse import OptionParser
 
 
