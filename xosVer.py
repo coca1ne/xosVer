@@ -4,8 +4,8 @@
 #	xosVer
 #
 
-__version__ = '1.0.1 (http://Her0in.org)'
-__author__ = 'Coca1ne'
+__version__ = '2.0.1 (http://Her0in.org)'
+__author__  = 'Coca1ne'
 
 __doc__ = """
 xosVer 
@@ -13,6 +13,7 @@ xosVer
  by Her0in Team
 
 https://github.com/Coca1ne/xosVer
+
 """
 import os,sys,socket,binascii,subprocess,re
 
@@ -39,17 +40,30 @@ def xosVer(ipAddr,timeout,IsSave):
         
         s.sendall(payload["SMB_CMD_SESSION_SETUP_ANDX"])
         data = binascii.b2a_hex(s.recv(1024))
-        osInfo.append(getHostname(data))
-        
+        osInfo.append(getHostInfo(data))
         s.sendall(payload["SMB_CMD_SESSION_SETUP_ANDX_WITH_NTLMSSP"])
         data = binascii.b2a_hex(s.recv(1024))
         
         s.sendall(payload["SMB_CMD_SESSION_SETUP_ANDX_NO_NTLMSSP"])
         data = binascii.b2a_hex(s.recv(1024))
         osInfo.append(getOSInfo(data))
+
+        print ("%-30s %-30s" % ("NetBIOS Domain Name:", osInfo[0][0]))
+        print ("%-30s %-30s" % ("NetBIOS Computer Name:", osInfo[0][1]))
+        print ("%-30s %-30s" % ("DNS Domain Name:", osInfo[0][2]))
+        print ("%-30s %-30s" % ("DNS Computer Name:", osInfo[0][3]))
+        print ("%-30s %-30s" % ("DNS Tree Name:", osInfo[0][4]))
+        print ("%-30s %-30s" % ("Native OS:", osInfo[1][0]))
+        print ("%-30s %-30s" % ("Native LAN Manager:", osInfo[1][1]))
+        print ("%-30s %-30s" % ("Primary Domain:", osInfo[1][2]))
+
         if IsSave:
             print >> fp, ("%-30s %-30s" % ("IP:", ipAddr))
-            print >> fp, ("%-30s %-30s" % ("Target Name:", osInfo[0]))
+            print >> fp, ("%-30s %-30s" % ("NetBIOS Domain Name:", osInfo[0][0]))
+            print >> fp, ("%-30s %-30s" % ("NetBIOS Computer Name:", osInfo[0][1]))
+            print >> fp, ("%-30s %-30s" % ("DNS Domain Name:", osInfo[0][2]))
+            print >> fp, ("%-30s %-30s" % ("DNS Computer Name:", osInfo[0][3]))
+            print >> fp, ("%-30s %-30s" % ("DNS Tree Name:", osInfo[0][4]))
             print >> fp, ("%-30s %-30s" % ("Native OS:", osInfo[1][0]))
             print >> fp, ("%-30s %-30s" % ("Native LAN Manager:", osInfo[1][1]))
             print >> fp, ("%-30s %-30s" % ("Primary Domain:", osInfo[1][2]))
@@ -63,55 +77,107 @@ def xosVer(ipAddr,timeout,IsSave):
         s.close()
     if IsSave:fp.close()
     print ("------------------------------------------------------")
-def getHostname(data):    
-    net_bios_header_len = 4
-    smb_header_len      = 32
-    smb_cmd_ex_len      = 7
-    
-    iPos = (smb_header_len + net_bios_header_len + smb_cmd_ex_len) * 2
+def getHostInfo(data):
+    try:
+        if not data.strip():
+            raise
+        net_bios_header_len = 4
+        smb_header_len      = 32
+        smb_cmd_ex_len      = 7
+        
+        iPos = (smb_header_len + net_bios_header_len + smb_cmd_ex_len) * 2
 
-    blobHex = data[iPos:iPos + 4]
-    if blobHex[2:] == "00":
-        blobHex = blobHex[0:2]
-    blob_len = int(blobHex, 16)
-    iPos    += 8
-    secBlob  = data[iPos:iPos + blob_len * 2]
-    token    = secBlob[secBlob.find('4e544c4d53535000'):]
-    
-    iLen     = int(token[24:12 * 2 + 4].replace('00', ''), 16)
-    offset   = int(token[32:16 * 2 + 8].replace('00', ''), 16)
-	
-    iPos     = offset * 2
-    name     = token[iPos:iPos + iLen * 2] 
-    names    = u""
-    for i in xrange(0,len(name), 2):
-            names += r"\x" + name[i:i + 2]
-    name = names.split(r"\x00\x00")
-    name = name[0].replace(r'\x', '').replace('00', '')
-    print ("%-30s %-30s" % ("Target Name:", binascii.a2b_hex(name)))
-    return binascii.a2b_hex(name)
-
-def getOSInfo(data):
-    info  = data[45 * 2:]
-    infos = u""
-    for i in xrange(0, len(info), 2):
+        blobHex = data[iPos:iPos + 4]
+        if blobHex[2:] == "00":
+            blobHex = blobHex[0:2]
+        blob_len = int(blobHex, 16)
+        iPos    += 8
+        secBlob  = data[iPos:iPos + blob_len * 2]
+        token    = secBlob[secBlob.find('4e544c4d53535000'):]
+        
+        iPos     = token.find('0000000000000000')
+        iPos    += 16
+        info     = token[iPos:]
+        
+        iLen     = int(info[:4].replace('00', ''), 16)
+        offset   = int(info[8:12].replace('00', ''), 16)
+        info     = token[offset * 2:]
+        
+        infos    = u""
+        for i in xrange(0,len(info), 2):
             infos += r"\x" + info[i:i + 2]
 
-    osOffset = infos.find(r"\x00") + 4
-    lmOffset = infos.find(r"\x00", osOffset) + 4 
-    os       = xreplace(infos[:osOffset])
-    lm       = xreplace(infos[osOffset:lmOffset])
-    domain   = xreplace(infos[lmOffset:])
-	
-    print ("%-30s %-30s" % ("Native OS:", binascii.a2b_hex(os)))
-    print ("%-30s %-30s" % ("Native LAN Manager:", binascii.a2b_hex(lm)))
-    print ("%-30s %-30s" % ("Primary Domain:", binascii.a2b_hex(domain)))
-    return binascii.a2b_hex(os), binascii.a2b_hex(lm), binascii.a2b_hex(domain)    
+        info    = infos.split(r"\x00\x00")
+        info    = info[0].replace('00', '').replace(r'\x', '')        
+        try:
+            iPos    = 2
+            iLen    = int(info[iPos:iPos + 2], 16)
+            net_BIOS_domain     = binascii.a2b_hex(info[iPos + 2:iLen + iPos + 2])
+        except Exception, e:
+            net_BIOS_domain = "Unknown"
+            
+        try:
+            iPos   += iLen + 4
+            iLen    = int(info[iPos:iPos + 2], 16)
+            net_BIOS_computer   = binascii.a2b_hex(info[iPos + 2:iLen + iPos + 2])
+        except Exception, e:
+            net_BIOS_computer = "Unknown"
+            
+        try:
+            iPos    += iLen + 4
+            iLen     = int(info[iPos:iPos + 2], 16)
+            dns_domain   = binascii.a2b_hex(info[iPos + 2:iLen + iPos + 2])
+        except Exception, e:
+            dns_domain = "Unknown"
 
-def xreplace(text):
-    return text.replace("00", "").replace(r"\x", "")
+        try:        
+            iPos    += iLen + 4
+            iLen     = int(info[iPos:iPos + 2], 16)
+            dns_computer   = binascii.a2b_hex(info[iPos + 2:iLen + iPos + 2])
+        except Exception, e:
+            dns_computer = "Unknown"
+        
+        try:
+            iPos    += iLen + 4
+            iLen     = int(info[iPos:iPos + 2], 16)
+            dns_tree = binascii.a2b_hex(info[iPos + 2:iLen + iPos + 2])
+        except Exception, e:
+            dns_tree = "Unknown"
+        return net_BIOS_domain, net_BIOS_computer, dns_domain, dns_computer, dns_tree
+    except Exception, e:
+        return "Unknown","Unknown","Unknown","Unknown","Unknown"
 
-	
+def getOSInfo(data):
+    try:
+        if not data.strip():
+            raise
+        info  = data[45 * 2:]
+        infos = u""
+        for i in xrange(0, len(info), 2):
+                infos += r"\x" + info[i:i + 2]
+        try:
+            osOffset = infos.find(r"\x00") + 4
+            os       = infos[:osOffset].replace("00", "").replace(r"\x", "")
+            os       = binascii.a2b_hex(os)
+        except Exception, e:
+            print e
+            os = "Unknown"
+      
+        try: 
+            lmOffset = infos.find(r"\x00", osOffset) + 4 
+            lm       = infos[osOffset:lmOffset].replace("00", "").replace(r"\x", "")
+            lm = binascii.a2b_hex(lm)
+        except:
+            lm = "Unknown"
+
+        try:
+            domain   = binascii.a2b_hex(infos[lmOffset:].replace("00", "").replace(r"\x", ""))
+        except:
+            domain = "Unknown"
+        return os, lm, domain
+    except:
+        return "Unknown","Unknown","Unknown"
+
 def main():
     print (r"                             ")
     print (r"            \ \    / /       ")
